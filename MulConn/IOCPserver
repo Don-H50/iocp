@@ -1,0 +1,25 @@
+#include <iostream>
+
+struct ServerParams{
+  SOCKET listrenSocket;
+  HANDLE iocp;
+};
+
+int initServer(ServerParams &pms){
+   
+}
+/*
+几个动作：
+  1、socket
+  2、bind
+  3、listen
+  4、iocp
+  5、socket与iocp进行关联
+  
+返回：
+  1、listensocket
+  2、4中的iocp handle
+  ——需要创建一个结构体进行返回 struct Serverparams
+*/
+
+
