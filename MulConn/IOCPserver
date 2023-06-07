@@ -1,15 +1,54 @@
 #include <iostream>
+#include <Winsock2.h>
+
+#define PORT 8989
+#define SOMAXCONN 100000
 
 struct ServerParams{
-  SOCKET listrenSocket;
+  SOCKET listenSocket;
   HANDLE iocp;
 };
 
 int initServer(ServerParams &pms){
-   
+    WSADATA wsaData;
+    int ret;
+    
+    ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
+
+    //SOCKET sock = =WSASocket();
+    if(ret == 0){
+            pms.listenSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+            if(pms.listenSocket != INVALID_SOCKET) {
+                //initial seraddr
+                sockaddr_in servaddr;
+                servaddr.sin_family = AF_INET;
+                servaddr.sin_addr.s_addr = INADDR_ANY;
+                servaddr.sin_port = PORT;
+
+                ret = bind(pms.listenSocket, (const sockaddr*)&servaddr, sizeof(servaddr));
+                if(ret == 0){
+                    ret = listen(pms.listenSocket, SOMAXCONN);  //允许并发运行多少全连接队列
+                    if(ret){
+                        //listen successfully, creat iocp
+                        pms.iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0);
+                        if(pms.iocp != NULL){
+                          //connect socket with iocp
+                          if(NULL != CreateIoCompletionPort((HANDLE)pms.listenSocket, pms.iocp, NULL, 0)) { //53
+                              return 0;
+                          }
+                          CloseHandle(pms.iocp);
+                        }
+                    }
+                }
+                closesocket(pms.listenSocket);
+            }
+            WSACleanup();
+    }
+    if(ret == 0) ret = -1;
+    return ret;
 }
 /*
-几个动作：
+几个动作在initServer中执行：
   1、socket
   2、bind
   3、listen
@@ -22,4 +61,7 @@ int initServer(ServerParams &pms){
   ——需要创建一个结构体进行返回 struct Serverparams
 */
 
+int main(){
 
+  return 0;
+}
