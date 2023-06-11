@@ -1,0 +1,185 @@
+#include <iostream>
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#include <vector>
+
+#pragma comment(lib, "ws2_32.lib")
+
+const int BUFFER_SIZE = 4096;
+const int MAX_CLIENTS = 100;
+
+struct ClientContext {
+    SOCKET socket;
+    char buffer[BUFFER_SIZE];
+    WSABUF wsaBuffer;
+    OVERLAPPED overlapped;
+};
+
+int main() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "Failed to initialize Winsock" << std::endl;
+        return 1;
+    }
+
+    // 创建监听套接字
+    SOCKET listenSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenSocket == INVALID_SOCKET) {
+        std::cerr << "Failed to create listen socket" << std::endl;
+        WSACleanup();
+        return 1;
+    }
+
+    // 绑定监听套接字
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(8888);
+    if (bind(listenSocket, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Failed to bind listen socket" << std::endl;
+        closesocket(listenSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // 监听连接
+    if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
+        std::cerr << "Failed to listen on listen socket" << std::endl;
+        closesocket(listenSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    std::cout << "Server started. Listening for connections..." << std::endl;
+
+    // 创建完成端口
+    HANDLE completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
+    if (completionPort == nullptr) {
+        std::cerr << "Failed to create completion port" << std::endl;
+        closesocket(listenSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // 将监听套接字关联到完成端口
+    if (CreateIoCompletionPort(reinterpret_cast<HANDLE>(listenSocket), completionPort, 0, 0) == nullptr) {
+        std::cerr << "Failed to associate listen socket with completion port" << std::endl;
+        closesocket(listenSocket);
+        CloseHandle(completionPort);
+        WSACleanup();
+        return 1;
+    }
+
+    std::vector<ClientContext> clients(MAX_CLIENTS);
+    for (auto& client : clients) {
+        // 创建客户端套接字
+        client.socket = WSASocket(AF_INET, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
+        if (client.socket == INVALID_SOCKET) {
+            std::cerr << "Failed to create client socket" << std::endl;
+            closesocket(listenSocket);
+            CloseHandle(completionPort);
+            WSACleanup();
+            return 1;
+        }
+
+        // 将客户端套接字关联到完成端口
+        if (CreateIoCompletionPort(reinterpret_cast<HANDLE>(client.socket), completionPort, 0, 0) == nullptr) {
+            std::cerr << "Failed to associate client socket with completion port" << std::endl;
+            closesocket(client.socket);
+            closesocket(listenSocket);
+            CloseHandle(completionPort);
+            WSACleanup();
+            return 1;
+        }
+    }
+
+    while (true) {
+        // 等待IO完成
+        DWORD numBytes;
+        ULONG_PTR completionKey;
+        LPOVERLAPPED overlapped;
+        if (!GetQueuedCompletionStatus(completionPort, &numBytes, &completionKey, &overlapped, INFINITE)) {
+            std::cerr << "Failed to get completion status" << std::endl;
+            break;
+        }
+
+        if (overlapped == nullptr) {
+            // 监听套接字有新的连接
+            sockaddr_in clientAddr{};
+            int addrLen = sizeof(clientAddr);
+            SOCKET clientSocket = accept(listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &addrLen);
+            if (clientSocket != INVALID_SOCKET) {
+                std::cout << "Accepted connection from " << inet_ntoa(clientAddr.sin_addr) << std::endl;
+
+                // 选择一个空闲的ClientContext
+                ClientContext* clientContext = nullptr;
+                for (auto& client : clients) {
+                    if (client.socket == INVALID_SOCKET) {
+                        clientContext = &client;
+                        break;
+                    }
+                }
+
+                if (clientContext != nullptr) {
+                    // 初始化ClientContext
+                    ZeroMemory(&(clientContext->overlapped), sizeof(OVERLAPPED));
+                    clientContext->socket = clientSocket;
+                    clientContext->wsaBuffer.buf = clientContext->buffer;
+                    clientContext->wsaBuffer.len = BUFFER_SIZE;
+
+                    // 接收客户端数据
+                    DWORD flags = 0;
+                    if (WSARecv(clientContext->socket, &(clientContext->wsaBuffer), 1, nullptr, &flags, &(clientContext->overlapped), nullptr) == SOCKET_ERROR) {
+                        if (WSAGetLastError() != WSA_IO_PENDING) {
+                            std::cerr << "Failed to start WSARecv" << std::endl;
+                            closesocket(clientContext->socket);
+                            clientContext->socket = INVALID_SOCKET;
+                        }
+                    }
+                }
+                else {
+                    std::cerr << "Failed to find an available client context" << std::endl;
+                    closesocket(clientSocket);
+                }
+            }
+            else {
+                std::cerr << "Failed to accept client connection" << std::endl;
+            }
+        }
+        else {
+            // 已有客户端有数据到达
+            ClientContext* clientContext = reinterpret_cast<ClientContext*>(overlapped);
+
+            if (numBytes > 0) {
+                std::cout << "Received " << numBytes << " bytes from client" << std::endl;
+
+                // 响应客户端数据
+                DWORD sentBytes;
+                WSASend(clientContext->socket, &(clientContext->wsaBuffer), 1, &sentBytes, 0, &(clientContext->overlapped), nullptr);
+            }
+            else {
+                // 客户端连接已关闭
+                sockaddr_in clientAddr{};
+                int addrLen = sizeof(clientAddr);
+                getpeername(clientContext->socket, reinterpret_cast<sockaddr*>(&clientAddr), &addrLen);
+                std::cout << "Connection closed from " << inet_ntoa(clientAddr.sin_addr) << std::endl;
+
+                closesocket(clientContext->socket);
+                clientContext->socket = INVALID_SOCKET;
+            }
+        }
+    }
+
+    // 清理资源
+    for (auto& client : clients) {
+        if (client.socket != INVALID_SOCKET) {
+            closesocket(client.socket);
+        }
+    }
+
+    closesocket(listenSocket);
+    CloseHandle(completionPort);
+    WSACleanup();
+
+    return 0;
+}
