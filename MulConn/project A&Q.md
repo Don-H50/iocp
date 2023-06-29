@@ -87,3 +87,6 @@
 在选择工具时，你需要根据你的具体需求来选择。例如，如果你只是想测试并发连接数，那么Ncat可能是一个好选择。如果你需要进行更详细的性能测试，那么JMeter和iperf可能更适合你。
 
 -----------------------
+
+
+![image](https://github.com/Don-H50/iocp/blob/main/imges/iocp.png)
