@@ -1,8 +1,11 @@
 import time
 import requests
+from urllib import parse,error
 from scrapy import Selector
-from  selenium import webdriver
-
+# from  selenium import webdriver
+# https://developer.vmware.com/apis/vsphere-automation/latest/vapi/operation-index/
+url = "https://developer.vmware.com"
+# domain_url = "https://developer.vmware.com/apis/vsphere-automation/latest/vapi/operation-index/"
 domain_url = "https://developer.vmware.com/apis/vsphere-automation/latest/vcenter/operation-index/"
 header={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.80 Safari/537.36'}
 # # 这里网站会有一个反爬的情况
@@ -29,9 +32,32 @@ for api_model in api_models:
     ways = []
     api_parts = api_model.xpath('./div[@class="clr-col-12"]')
     for api_part in api_parts:
-        i = i + 1
-        print(i, api_part)
-        api_methods
+        # print(i, api_part)
+        api_raws = api_part.xpath('./div/div[2]/div/table/tbody/tr')
+        # print(i, api_raws)
+        for api_raw in api_raws:
+            # api_item = api_raw.xpath('./td[1]/span/text()').extract()[0]
+            api_url_test = api_raw.xpath('./td[2]/a/@href').extract()[0]
+            i = i + 1
+            # 获取api段地址，进行拼接
+            api_url = parse.urljoin(url, api_url_test)
+            print(i, api_url)
+            loop = 1
+            # get_api_page_text = ''
+            while loop == 1:
+                try:
+                    loop = 0
+                    get_api_page_text = requests.get(api_url, headers=header).text
+                except error.URLError as error:
+                    print(error.reason)
+                    time.sleep(5)
+                    loop = 1
+            get_api_page_text_sel = Selector(text=get_api_page_text)
+            api_path = get_api_page_text_sel.xpath('//*[@id="operation-api-path"]/text()').extract()[0]
+            print(i+100, api_path)
+            # "//*[@id="operation-api-path"]/text()"
+            # print(i, api_item)
+        # api_methods
     # "//*[@id="doc-content-container"]/div/div[30]/div[32]/div/div[2]/div/table/tbody/tr[1]/td[1]/span"
     # "//*[@id="doc-content-container"]/div/div[30]/div[32]/div/div[2]/div/table/tbody/tr[2]/td[1]/span"
     # "//*[@id="doc-content-container"]/div/div[30]/div[32]/div/div[2]/div/table/tbody/tr[3]/td[1]/span"
@@ -41,14 +67,15 @@ for api_model in api_models:
     # "//*[@id="doc-content-container"]/div/div[31]/div[3]/div/div[2]/div/table/tbody/tr[1]/td[2]/a"    - url
     # "//*[@id="doc-content-container"]/div/div[31]/div[3]/div/div[2]/div/table/tbody/tr[2]/td[1]/span"
     # "//*[@id="doc-content-container"]/div/div[31]/div[3]/div/div[2]/div/table/tbody/tr[3]/td[1]/span"
-
+    # "//*[@id="doc-content-container"]/div/div[2]/div[6]/div/div[2]/div/table/tbody/tr[1]/td[2]/a"
+    # "//*[@id="doc-content-container"]/div/div[24]/div[1]/div/div[2]/div/table/tbody/tr[1]/td[1]/span"
 
 # text2 = api_models.xpath("./div[9]/div/div[2]/div/table/tbody/tr/td[1]/span/text()").extract()[0]
 
-text = onePage_text_sel.xpath('//*[@id="doc-content-container"]/div/div[27]/div[9]/div/div[2]/div/table/tbody/tr/td[1]/span/text()').extract()[0]
+# text = onePage_text_sel.xpath('//*[@id="doc-content-container"]/div/div[27]/div[9]/div/div[2]/div/table/tbody/tr/td[1]/span/text()').extract()[0]
 # //*[@id="doc-content-container"]/div/div[4]/div[2]/div/div[2]/div/table/tbody/tr[2]/td[1]/span/text()
-text1 = onePage_text_sel.xpath('//*[@id="doc-content-container"]/div/div[27]/div[9]/div/div[2]/div/table/tbody/tr/td[2]/a/@href').extract()[0]
+# text1 = onePage_text_sel.xpath('//*[@id="doc-content-container"]/div/div[27]/div[9]/div/div[2]/div/table/tbody/tr/td[2]/a/@href').extract()[0]
 
-print(onePage_text_sel)
+# print(onePage_text_sel)
 # print(text2)
-print(api_models)
+# print(api_models)
